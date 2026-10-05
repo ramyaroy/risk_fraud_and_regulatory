@@ -6,7 +6,7 @@
 [![Snowflake](https://img.shields.io/badge/Platform-Snowflake%20Data%20Cloud-blue.svg)](https://www.snowflake.com/)
 [![Cortex Analyst](https://img.shields.io/badge/Cortex-Analyst%20(Structured%20SQL)-purple.svg)]()
 [![Cortex Search](https://img.shields.io/badge/Cortex-Search%20(Regulatory%20RAG)-emerald.svg)]()
-[![Cortex LLM](https://img.shields.io/badge/Cortex-COMPLETE%20(Claude--3.5--Sonnet)-orange.svg)]()
+[![Cortex LLM](https://img.shields.io/badge/Cortex-COMPLETE%20-orange.svg)]()
 [![Streamlit in Snowflake](https://img.shields.io/badge/UI-Streamlit%20in%20Snowflake%20(SiS)-red.svg)]()
 
 ---
@@ -29,7 +29,7 @@ Banking and NBFC compliance teams spend days investigating alerts across **finan
 **RiskGuard AI** is built natively on the **Snowflake Data Cloud + Cortex AI ecosystem**:
 - **Structured Banking Data:** Queried via **Snowflake Cortex Analyst** using our official semantic model ([`riskguard_semantic_model.yaml`](file:///c:/python/banking_finance_issue/snowflake/riskguard_semantic_model.yaml)).
 - **Unstructured Regulatory Corpus:** Indexed via **Snowflake Cortex Search** over central bank directives (RBI, Basel III, PMLA, FinCEN).
-- **Governed Reasoning:** Powered by **Snowflake Cortex LLM** (`SNOWFLAKE.CORTEX.COMPLETE` with `claude-3-5-sonnet`) with strict, non-negotiable anti-hallucination guardrails.
+- **Governed Reasoning:** Powered by **Snowflake Cortex LLM** (`SNOWFLAKE.CORTEX.COMPLETE`) with strict, non-negotiable anti-hallucination guardrails.
 - **Enterprise UI:** **Streamlit in Snowflake (SiS)** with role-based governance for Business Managers, Compliance Officers, and Auditors.
 
 ```

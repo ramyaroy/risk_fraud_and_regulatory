@@ -306,61 +306,156 @@ elif page == "Page 2 — AI Copilot (Natural Language)":
             # Step 2: Cortex Search Regulatory Retrieval
             reg_matches = search_client.search_regulations(query, top_k=2)
 
-            # Step 3: Governed Cortex LLM Reasoning
-            finding = llm_engine.generate_governed_finding("C1007", [], reg_matches)
+            # Step 3: Extract structured evidence and detect entity
+            structured_evidence = []
+            if analyst_res.get("grounded", True) and not analyst_res.get("data", pd.DataFrame()).empty:
+                structured_evidence = analyst_res["data"].head(5).to_dict(orient="records")
+
+            target_cust = "UNKNOWN"
+            q_lower = query.lower()
+            for cid in ["C1007", "C1032", "C1045", "C1088", "C1098", "C1012"]:
+                if cid.lower() in q_lower:
+                    target_cust = cid
+                    break
+            # Check lowest / low risk first
+            if target_cust == "UNKNOWN" and any(k in q_lower for k in [
+                "lowest risk", "low risk", "min risk", "minimum risk", "safest", "least risky", "c1012"
+            ]) and not any(k in q_lower for k in ["high", "medium"]):
+                target_cust = "C1012"
+            # Check medium / moderate risk
+            elif target_cust == "UNKNOWN" and (any(k in q_lower for k in [
+                "medium risk", "moderate risk", "mid risk", "c1098"
+            ]) or q_lower.strip() == "medium") and not any(k in q_lower for k in ["high", "low"]):
+                target_cust = "C1098"
+            elif target_cust == "UNKNOWN" and any(k in q_lower for k in [
+                "c1007", "mule", "velocity", "unusual transaction", 
+                "highest risk", "top risk", "max risk", "peak risk", 
+                "maximum risk", "most risky", "highest score"
+            ]):
+                target_cust = "C1007"
+            elif target_cust == "UNKNOWN" and structured_evidence and isinstance(structured_evidence[0], dict):
+                target_cust = structured_evidence[0].get("CUSTOMER_ID", "UNKNOWN")
+
+            # Governed Cortex LLM Reasoning
+            finding = llm_engine.generate_governed_finding(target_cust, structured_evidence, reg_matches, query=query)
 
         st.markdown("---")
 
-        # Top Finding Banner
-        st.markdown(f"""
-        <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid #dc2626; border-radius: 8px; padding: 14px 18px; margin-bottom: 16px;">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                    <span style="color: #ef4444; font-weight: 800; font-size: 1.2rem;">🔴 {finding['risk_rating']} RISK — Score {finding['score']}</span>
-                    <div style="color: #cbd5e1; font-size: 0.95rem; margin-top: 4px;">
-                        <b>Subject:</b> {finding['customer_id']} ({finding.get('customer_name', 'Rahul S. Sharma')}) | <b>Case:</b> {finding['case_id']}
+        if finding.get("status") == "REFUSAL":
+            # Grounded Guardrail Card: "I do not know"
+            st.markdown(f"""
+            <div style="background: rgba(239, 68, 68, 0.08); border: 2px solid #ef4444; border-radius: 10px; padding: 22px 24px; margin-bottom: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                    <div>
+                        <div style="color: #ef4444; font-weight: 800; font-size: 1.25rem; display: flex; align-items: center; gap: 8px;">
+                            🛡️ I do not know
+                        </div>
+                        <div style="color: #f8fafc; font-size: 1.05rem; font-weight: 600; margin-top: 8px;">
+                            {finding.get('finding_text', 'I do not know. Cannot determine answer because the response.')}
+                        </div>
+                        <div style="color: #cbd5e1; font-size: 0.92rem; margin-top: 8px; line-height: 1.5;">
+                            <b>Mandate:</b> {finding.get('grounding_requirement', 'RiskGuard AI operates under strict BCBS 239 and RBI Model Risk Governance. Speculating without verified source evidence is strictly forbidden.')}
+                        </div>
+                    </div>
+                    <div style="text-align: right; min-width: 140px;">
+                        <span class="badge" style="background: #dc2626; color: white; padding: 4px 10px; border-radius: 12px; font-weight: 700; font-size: 0.75rem;">
+                            REFUSAL (UNGROUNDED)
+                        </span>
+                        <div style="color: #94a3b8; font-size: 0.78rem; margin-top: 6px;">Confidence: 0.0%</div>
                     </div>
                 </div>
-                <div style="text-align: right;">
-                    <span class="badge badge-cortex">Model: {finding['audit_meta']['model_used']}</span>
+            </div>
+            """, unsafe_allow_html=True)
+
+            ref_c1, ref_c2 = st.columns([3, 2])
+            with ref_c1:
+                st.markdown("#### 🔍 Cortex Analyst & Search Diagnostics")
+                st.markdown(f"**Query Submitted:** `{query}`")
+                st.markdown(f"**Analyst Query Status:** `{analyst_res.get('status', 'UNGROUNDED')}`")
+                st.info(f"**Governance Rationale:** {analyst_res.get('semantic_explanation', 'No grounded semantic entity matched.')}")
+                st.markdown(f"**Structured Evidence Matches:** `{len(structured_evidence)} verified records`")
+                st.markdown(f"**Regulatory Directive Matches:** `{len(reg_matches)} circulars`")
+
+            with ref_c2:
+                st.markdown("#### 💡 Suggested Grounded Questions")
+                st.markdown("""
+                To receive a fully verified, audit-ready answer, please query specific banking entities or indexed directives:
+                - 🚩 **'Why is C1007 high risk?'** *(AML Pass-Through Mule)*
+                - 🔎 **'Identify customers with unusual transaction activity in the last 24 hours'** *(High Velocity Concentration)*
+                - 📉 **'Which borrowers have deteriorating credit risk & SMA status?'** *(Credit Stressed Assets)*
+                - 📜 **'What regulatory requirement applies to unusual transaction activity?'** *(RBI KYC §4.2)*
+                """)
+        else:
+            # Top Finding Banner
+            risk_rating = finding.get('risk_rating', 'MEDIUM')
+            score = finding.get('score', 65)
+            customer_id = finding.get('customer_id', 'UNKNOWN')
+            customer_name = finding.get('customer_name', 'Rahul S. Sharma')
+            case_id = finding.get('case_id', 'CASE-2026-0042')
+            model_used = finding.get('audit_meta', {}).get('model_used', "SNOWFLAKE.CORTEX.COMPLETE")
+
+            banner_color = "#ef4444" if risk_rating == "HIGH" else ("#10b981" if risk_rating == "LOW" else "#f59e0b")
+            dot_color = "🔴" if risk_rating == "HIGH" else ("🟢" if risk_rating == "LOW" else "🟡")
+            bg_color = "rgba(16, 185, 129, 0.1)" if risk_rating == "LOW" else ("rgba(239, 68, 68, 0.1)" if risk_rating == "HIGH" else "rgba(245, 158, 11, 0.1)")
+            st.markdown(f"""
+            <div style="background: {bg_color}; border: 1px solid {banner_color}; border-radius: 8px; padding: 14px 18px; margin-bottom: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <span style="color: {banner_color}; font-weight: 800; font-size: 1.2rem;">{dot_color} {risk_rating} RISK — Score {score}</span>
+                        <div style="color: #cbd5e1; font-size: 0.95rem; margin-top: 4px;">
+                            <b>Subject:</b> {customer_id} ({customer_name}) | <b>Case:</b> {case_id}
+                        </div>
+                    </div>
+                    <div style="text-align: right;">
+                        <span class="badge badge-cortex">Model: {model_used}</span>
+                    </div>
                 </div>
             </div>
-        </div>
-        """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
 
-        res_c1, res_c2 = st.columns([3, 2])
+            res_c1, res_c2 = st.columns([3, 2])
 
-        with res_c1:
-            st.markdown("#### 🔍 Primary Transaction Evidence")
-            txns = finding['primary_evidence']
-            df_txns = pd.DataFrame(txns)
-            st.dataframe(df_txns, use_container_width=True, hide_index=True)
+            with res_c1:
+                st.markdown("#### 🔍 Primary Transaction Evidence")
+                txns = finding.get('primary_evidence', [])
+                if isinstance(txns, list) and txns:
+                    df_txns = pd.DataFrame(txns)
+                    st.dataframe(df_txns, use_container_width=True, hide_index=True)
+                elif not analyst_res.get('data', pd.DataFrame()).empty:
+                    st.dataframe(analyst_res['data'], use_container_width=True, hide_index=True)
+                else:
+                    st.caption("No primary transaction evidence linked.")
 
-            st.markdown("#### 📜 Applicable Regulatory Basis")
-            reg = finding['regulatory_basis']
-            st.info(f"**Regulation:** `{reg['title']}`  \n**Section:** `{reg['section']}` (Relevance: **{reg['relevance']}**)  \n**Authority:** `{reg['regulator']}` — {reg['version']}")
+                st.markdown("#### 📜 Applicable Regulatory Basis")
+                reg = finding.get('regulatory_basis', {})
+                if reg:
+                    rel_val = reg.get('relevance') or f"{reg.get('relevance_pct', 90)}%"
+                    st.info(f"**Regulation:** `{reg.get('title', 'RBI Master Direction')}`  \n**Section:** `{reg.get('section', 'N/A')}` (Relevance: **{rel_val}**)  \n**Authority:** `{reg.get('regulator', 'RBI')}` — {reg.get('version', 'v4.2')}")
+                else:
+                    st.caption("No statutory violation identified for this entity.")
 
-            st.markdown("#### 🎯 Recommended Action")
-            st.success(finding['recommended_action'])
+                st.markdown("#### 🎯 Recommended Action")
+                st.success(finding.get('recommended_action', 'Conduct standard supervisory review.'))
 
-        with res_c2:
-            st.markdown("#### 📊 Explainable Risk Score Decomposition")
-            # Explicit score breakdown from prompt
-            score_text = """AML Score = 92
+            with res_c2:
+                st.markdown("#### 📊 Explainable Risk Score Decomposition")
+                score_breakdown = finding.get('score_breakdown', [])
+                if score_breakdown:
+                    breakdown_lines = [f"{'AML' if 'AML' in query.upper() or 'C1007' in customer_id else 'Risk'} Score = {score}\n"]
+                    for factor in score_breakdown:
+                        breakdown_lines.append(f"+{factor.get('points', 0):<2} {factor.get('factor', '')} ({factor.get('detail', '')})")
+                    breakdown_lines.append("----------------------------------------")
+                    breakdown_lines.append(f" {score} {risk_rating} RISK")
+                    score_text = "\n".join(breakdown_lines)
+                else:
+                    score_text = f"Risk Score = {score}\n----------------------------------------\n {score} {risk_rating} RISK"
+                st.markdown(f'<div class="score-breakdown-box">{score_text}</div>', unsafe_allow_html=True)
 
-+30 unusual transaction size (> 3 std dev)
-+25 high transaction velocity (burst in 1 hr)
-+25 24-hour concentration (> ₹5 Lakh)
-+10 cross-border activity (UAE & SG)
-+2  minor network retries
-----------------------------------------
- 92 HIGH RISK"""
-            st.markdown(f'<div class="score-breakdown-box">{score_text}</div>', unsafe_allow_html=True)
-
-            if persona == "Supervisory Auditor":
-                st.markdown("#### 🔒 Provenance & Audit Metadata")
-                st.caption(f"SQL Query ID: `{finding['audit_meta']['sql_query_id']}`")
-                st.caption(f"Integrity Hash: `{finding['audit_meta']['provenance_hash']}`")
+                if persona == "Supervisory Auditor":
+                    st.markdown("#### 🔒 Provenance & Audit Metadata")
+                    audit = finding.get('audit_meta', {})
+                    st.caption(f"SQL Query ID: `{audit.get('sql_query_id', 'N/A')}`")
+                    st.caption(f"Integrity Hash: `{audit.get('provenance_hash', 'N/A')}`")
 
 # -------------------------------------------------------------
 # PAGE 3: FRAUD INVESTIGATION & NETWORK GRAPH
