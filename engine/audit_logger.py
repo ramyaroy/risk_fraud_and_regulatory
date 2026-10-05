@@ -16,6 +16,19 @@ DB_PATH = os.path.join(DB_DIR, "riskguard.db")
 
 def get_latest_hash(conn):
     cur = conn.cursor()
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS audit_trail (
+        log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp TEXT,
+        user_action TEXT,
+        query_text TEXT,
+        target_entity TEXT,
+        result_summary TEXT,
+        prev_hash TEXT,
+        current_hash TEXT
+    )
+    """)
+    conn.commit()
     cur.execute("SELECT current_hash FROM audit_trail ORDER BY log_id DESC LIMIT 1")
     row = cur.fetchone()
     if row:

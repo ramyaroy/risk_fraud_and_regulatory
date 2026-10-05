@@ -38,7 +38,13 @@ class CortexSearchClient:
             
             # Boost score based on domain matches
             score = overlap / max(len(q_tokens), 1)
-            if "velocity" in query.lower() or "mule" in query.lower() or "c1007" in query.lower() or "rapid" in query.lower():
+            if any(k in query.lower() for k in ["lowest", "low risk", "c1012", "safest", "min risk", "minimum risk"]):
+                if "1.1" in row['SECTION']:
+                    score += 0.85
+            elif any(k in query.lower() for k in ["medium risk", "moderate risk", "mid risk", "c1098"]) and not any(k in query.lower() for k in ["high", "low"]):
+                if "4.2" in row['SECTION']:
+                    score += 0.75
+            elif any(k in query.lower() for k in ["velocity", "mule", "c1007", "rapid", "highest risk", "top risk", "max risk", "peak risk", "maximum risk"]):
                 if "4.2" in row['SECTION']:
                     score += 0.8
             elif "structuring" in query.lower() or "cash" in query.lower() or "smurfing" in query.lower():

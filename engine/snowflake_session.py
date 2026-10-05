@@ -193,7 +193,7 @@ class SnowflakeEmulatorSession:
         customers = [
             ("C1007", "RETAIL", "Rahul S. Sharma (QuickTrade Sole Prop)", "1988-04-12", "IN", "Mumbai", "Sole Proprietor", 600000.0, "2023-03-15", "HIGH", "VERIFIED"),
             ("C1032", "CORPORATE", "Apex Horizon Global Ltd", "2015-09-20", "IN", "New Delhi", "Import-Export", 18000000.0, "2021-01-10", "HIGH", "VERIFIED"),
-            ("C1098", "MSME", "Starlight FinTech Enterprises", "2020-11-05", "IN", "Bengaluru", "Payment Aggregator", 12000000.0, "2022-07-18", "HIGH", "VERIFIED"),
+            ("C1098", "MSME", "Starlight FinTech Enterprises", "2020-11-05", "IN", "Bengaluru", "Payment Aggregator", 12000000.0, "2022-07-18", "MEDIUM", "VERIFIED"),
             ("C1045", "CORPORATE", "BlueOcean Infrastructure Pvt Ltd", "2012-06-22", "IN", "Hyderabad", "Infrastructure Developer", 85000000.0, "2019-05-14", "HIGH", "VERIFIED"),
             ("C1012", "CORPORATE", "Zenith Pharma Logistics Ltd", "2010-02-18", "IN", "Ahmedabad", "Pharmaceuticals", 45000000.0, "2018-10-30", "LOW", "VERIFIED"),
             ("C1088", "RETAIL", "Sunita Verma", "1975-08-30", "IN", "Pune", "Consultant", 800000.0, "2017-04-11", "HIGH", "PENDING_RE_KYC")

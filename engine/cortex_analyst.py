@@ -39,8 +39,28 @@ class CortexAnalystClient:
         """
         q = natural_query.lower()
 
-        # Intent 1: C1007 or Specific Customer Risk Query
-        if "c1007" in q or ("unusual transaction" in q and ("24" in q or "today" in q)):
+        # Ungrounded isolated query: pure "max score" without entity or risk context
+        if q.strip() in ["max score", "maximum score"] or (q.startswith("max score") and "risk" not in q):
+            return "", "Cannot determine 'max score': Query is ungrounded and lacks entity context (customer ID, loan ID, or specific scoring framework). RiskGuard Model Governance forbids ungrounded speculation."
+
+        # Intent 0: Lowest Risk / Low Risk / Min Risk Customers
+        if (any(k in q for k in ["lowest risk", "low risk", "min risk", "minimum risk", "safest", "least risky"]) or "c1012" in q) and not any(k in q for k in ["highest", "max", "top", "peak"]):
+            sql = """
+            SELECT 
+                c.CUSTOMER_ID, c.CUSTOMER_NAME, c.CUSTOMER_TYPE, c.RISK_RATING,
+                c.OCCUPATION, c.ANNUAL_INCOME, c.KYC_STATUS,
+                a.ACCOUNT_ID, a.CURRENT_BALANCE,
+                l.LOAN_ID, l.STATUS as LOAN_STATUS
+            FROM CUSTOMER c
+            LEFT JOIN ACCOUNT a ON c.CUSTOMER_ID = a.CUSTOMER_ID
+            LEFT JOIN LOAN l ON c.CUSTOMER_ID = l.CUSTOMER_ID
+            WHERE c.CUSTOMER_ID = 'C1012' OR c.RISK_RATING = 'LOW'
+            """
+            explanation = "Filtered CUSTOMER, ACCOUNT, and LOAN for Customer C1012 — identified as the Lowest / Minimum Risk Entity (Rating: LOW, Standard Performing Facility, 0 DPD)."
+            return sql.strip(), explanation
+
+        # Intent 1: C1007 or Highest Risk / Max Risk / Top Risk Customer Query
+        elif any(k in q for k in ["c1007", "highest risk", "top risk", "max risk", "peak risk", "maximum risk", "most risky", "highest score"]) or ("unusual transaction" in q and ("24" in q or "today" in q)):
             sql = """
             SELECT 
                 t.TRANSACTION_ID, t.CUSTOMER_ID, t.TRANSACTION_TS, t.AMOUNT,
@@ -51,7 +71,21 @@ class CortexAnalystClient:
             WHERE t.CUSTOMER_ID = 'C1007'
             ORDER BY t.TRANSACTION_TS ASC
             """
-            explanation = "Filtered TRANSACTION for Customer C1007 to analyze 24-hour pass-through velocity and counterparty destinations."
+            explanation = "Filtered TRANSACTION for Customer C1007 — identified as the Peak / Highest Risk Entity (AML Score 92, HIGH RISK) exhibiting severe 24-hour pass-through velocity."
+            return sql.strip(), explanation
+
+        # Intent 1b: Medium / Moderate Risk Customer Query
+        elif (any(k in q for k in ["medium risk", "moderate risk", "mid risk", "medium", "c1098"]) or q.strip() == "medium") and not any(k in q for k in ["high", "low"]):
+            sql = """
+            SELECT 
+                c.CUSTOMER_ID, c.CUSTOMER_NAME, c.CUSTOMER_TYPE, c.RISK_RATING,
+                c.OCCUPATION, c.ANNUAL_INCOME, c.KYC_STATUS,
+                a.ACCOUNT_ID, a.CURRENT_BALANCE
+            FROM CUSTOMER c
+            LEFT JOIN ACCOUNT a ON c.CUSTOMER_ID = a.CUSTOMER_ID
+            WHERE c.CUSTOMER_ID = 'C1098' OR c.RISK_RATING = 'MEDIUM'
+            """
+            explanation = "Filtered CUSTOMER and ACCOUNT for Customer C1098 — identified as Medium Risk Entity (Rating: MEDIUM, Score: 55, Payment Aggregator Settlement Volume Surge)."
             return sql.strip(), explanation
 
         # Intent 2: General High-Risk Customers (AML Score >= 70)
@@ -100,21 +134,36 @@ class CortexAnalystClient:
             explanation = "Queried LIQUIDITY_POSITION to calculate 30-day net stressed outflows vs HQLA under Basel III BCBS 238."
             return sql.strip(), explanation
 
-        # Fallback General Query
-        else:
+        # Fallback General Query - only if related to banking/risk domain
+        elif any(kw in q for kw in ["customer", "transaction", "account", "risk", "aml", "fraud", "overview", "show", "summary"]):
             sql = "SELECT * FROM CUSTOMER WHERE RISK_RATING = 'HIGH'"
             explanation = "Defaulted to High Risk Customer overview."
             return sql, explanation
+
+        # Out-of-scope / Ungrounded queries
+        else:
+            return "", f"Cannot determine query intent for '{natural_query}': Query is not grounded in Snowflake banking data, financial risk features, or regulatory circulars."
 
     def execute_analyst_query(self, natural_query: str) -> dict:
         """
         Translates and executes query via active Snowflake session.
         """
         sql, explanation = self.query_to_sql(natural_query)
+        if not sql:
+            return {
+                "query": natural_query,
+                "generated_sql": "NONE (Execution halted by Grounding Guardrail)",
+                "semantic_explanation": explanation,
+                "data": pd.DataFrame(),
+                "grounded": False,
+                "status": "UNGROUNDED"
+            }
         df = self.session.sql(sql).to_pandas()
         return {
             "query": natural_query,
             "generated_sql": sql,
             "semantic_explanation": explanation,
-            "data": df
+            "data": df,
+            "grounded": True,
+            "status": "SUCCESS"
         }

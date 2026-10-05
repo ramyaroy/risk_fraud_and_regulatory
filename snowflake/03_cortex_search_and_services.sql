@@ -34,7 +34,7 @@ CREATE OR REPLACE STAGE RISKGUARD.ANALYTICS.SEMANTIC_MODELS_STAGE
     DIRECTORY = (ENABLE = TRUE);
 
 -- 3. GOVERNED CORTEX LLM STORED PROCEDURE / FUNCTION
--- Enforces zero-hallucination model risk governance using claude-3-5-sonnet in Snowflake
+-- Enforces zero-hallucination model risk governance using Snowflake
 USE SCHEMA RISKGUARD.GOVERNANCE;
 
 CREATE OR REPLACE FUNCTION GENERATE_GOVERNED_RISK_EXPLANATION(
