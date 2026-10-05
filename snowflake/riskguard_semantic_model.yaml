@@ -1,0 +1,144 @@
+name: riskguard_financial_semantic_model
+description: "Cortex Analyst Semantic Model for RiskGuard AI Banking Risk, Fraud, and Regulatory Intelligence Copilot"
+
+tables:
+  - name: AML_RISK_SCORE
+    description: "Granular transaction-level table with rolling window velocity features and additive explainable AML risk factor scores."
+    base_table:
+      database: RISKGUARD
+      schema: ANALYTICS
+      table: AML_RISK_SCORE
+    dimensions:
+      - name: TRANSACTION_ID
+        description: "Unique alphanumeric transaction identifier"
+        expr: TRANSACTION_ID
+        synonyms: ["txn id", "transaction reference", "payment id"]
+      - name: CUSTOMER_ID
+        description: "Unique identifier for customer or entity"
+        expr: CUSTOMER_ID
+        synonyms: ["client id", "customer code", "account holder"]
+      - name: CHANNEL
+        description: "Payment rail or transaction channel"
+        expr: CHANNEL
+        synonyms: ["rail", "payment mode", "IMPS", "RTGS", "UPI", "CASH"]
+      - name: COUNTERPARTY_COUNTRY
+        description: "Country code of transaction recipient or sender"
+        expr: COUNTERPARTY_COUNTRY
+        synonyms: ["beneficiary country", "cross-border destination"]
+      - name: RISK_LEVEL
+        description: "Calculated categorical risk level"
+        expr: RISK_LEVEL
+        synonyms: ["severity", "risk classification", "risk tier"]
+    measures:
+      - name: AMOUNT
+        description: "Transaction amount in local currency"
+        expr: AMOUNT
+        default_aggregation: sum
+        synonyms: ["value", "transaction volume", "sum of money"]
+      - name: AML_RISK_SCORE
+        description: "Composite explainable AML risk score between 0 and 100"
+        expr: AML_RISK_SCORE
+        default_aggregation: avg
+        synonyms: ["risk score", "fraud score", "suspicion index"]
+      - name: TXN_COUNT_1H
+        description: "Rolling 1-hour transaction velocity count"
+        expr: TXN_COUNT_1H
+        default_aggregation: max
+        synonyms: ["hourly velocity", "burst count", "transaction frequency"]
+      - name: SCORE_UNUSUAL_AMOUNT
+        description: "Additive score (+30) for amount exceeding 3 std deviations above customer mean"
+        expr: SCORE_UNUSUAL_AMOUNT
+        default_aggregation: sum
+      - name: SCORE_HIGH_VELOCITY
+        description: "Additive score (+25) for >= 5 transactions within 1 hour"
+        expr: SCORE_HIGH_VELOCITY
+        default_aggregation: sum
+      - name: SCORE_24H_CONCENTRATION
+        description: "Additive score (+25) for cumulative 24h amount exceeding 500,000 INR"
+        expr: SCORE_24H_CONCENTRATION
+        default_aggregation: sum
+
+  - name: CUSTOMER_RISK_SUMMARY
+    description: "Rollup view of customer risk ratings, aggregated transaction volumes, and peak AML scores."
+    base_table:
+      database: RISKGUARD
+      schema: ANALYTICS
+      table: CUSTOMER_RISK_SUMMARY
+    dimensions:
+      - name: CUSTOMER_ID
+        description: "Customer unique ID"
+        expr: CUSTOMER_ID
+      - name: CUSTOMER_NAME
+        description: "Legal customer or business entity name"
+        expr: CUSTOMER_NAME
+        synonyms: ["client name", "account holder name", "company name"]
+      - name: CUSTOMER_TYPE
+        description: "Customer segment"
+        expr: CUSTOMER_TYPE
+        synonyms: ["segment", "client type", "corporate", "retail"]
+      - name: PEAK_RISK_LEVEL
+        description: "Highest risk severity level observed"
+        expr: PEAK_RISK_LEVEL
+        synonyms: ["risk level", "overall severity"]
+    measures:
+      - name: PEAK_AML_SCORE
+        description: "Peak recorded AML risk score"
+        expr: PEAK_AML_SCORE
+        default_aggregation: max
+      - name: TOTAL_VOLUME_INR
+        description: "Total aggregate transaction volume"
+        expr: TOTAL_VOLUME_INR
+        default_aggregation: sum
+
+  - name: CREDIT_RISK_SUMMARY
+    description: "Loan exposure, days past due (DPD), asset classification, and repayment track record."
+    base_table:
+      database: RISKGUARD
+      schema: ANALYTICS
+      table: CREDIT_RISK_SUMMARY
+    dimensions:
+      - name: LOAN_ID
+        description: "Loan facility identifier"
+        expr: LOAN_ID
+      - name: CALCULATED_ASSET_CLASS
+        description: "Supervisory asset classification (Standard, SMA-0, SMA-1, SMA-2, NPA)"
+        expr: CALCULATED_ASSET_CLASS
+        synonyms: ["asset grade", "overdue category", "SMA status", "NPA"]
+    measures:
+      - name: OUTSTANDING_AMOUNT
+        description: "Total outstanding credit balance"
+        expr: OUTSTANDING_AMOUNT
+        default_aggregation: sum
+      - name: MAX_DPD
+        description: "Maximum Days Past Due"
+        expr: MAX_DPD
+        default_aggregation: max
+        synonyms: ["overdue days", "delinquency days", "DPD"]
+
+  - name: LIQUIDITY_POSITION
+    description: "Daily treasury liquidity positions, High Quality Liquid Assets (HQLA), and Basel III LCR metrics."
+    base_table:
+      database: RISKGUARD
+      schema: DATA
+      table: LIQUIDITY_POSITION
+    dimensions:
+      - name: POSITION_DATE
+        description: "Reporting date of liquidity snapshot"
+        expr: POSITION_DATE
+      - name: BUSINESS_UNIT
+        description: "Treasury division or entity"
+        expr: BUSINESS_UNIT
+    measures:
+      - name: LCR
+        description: "Liquidity Coverage Ratio percentage (Statutory minimum is 100%)"
+        expr: LCR
+        default_aggregation: avg
+        synonyms: ["LCR ratio", "liquidity ratio", "coverage ratio"]
+      - name: HQLA
+        description: "Total Stock of High Quality Liquid Assets"
+        expr: HQLA
+        default_aggregation: sum
+      - name: CASH_OUTFLOW
+        description: "Stressed 30-day gross cash outflows"
+        expr: CASH_OUTFLOW
+        default_aggregation: sum
