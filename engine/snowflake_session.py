@@ -179,6 +179,64 @@ class SnowflakeEmulatorSession:
             AUDIT_HASH TEXT
         )""")
 
+        # Analytical Views matching Snowflake 02_analytical_features.sql
+        cur.execute("""
+        CREATE VIEW IF NOT EXISTS CUSTOMER_RISK_SUMMARY AS
+        SELECT
+            C.CUSTOMER_ID,
+            C.CUSTOMER_NAME,
+            C.CUSTOMER_TYPE,
+            C.RISK_RATING AS DECLARED_RATING,
+            COUNT(T.TRANSACTION_ID) AS TOTAL_TXNS,
+            COALESCE(SUM(T.AMOUNT), 0) AS TOTAL_VOLUME_INR,
+            MAX(T.TRANSACTION_TS) AS LAST_ACTIVITY_TS
+        FROM CUSTOMER C
+        LEFT JOIN TRANSACTIONS T ON C.CUSTOMER_ID = T.CUSTOMER_ID
+        GROUP BY C.CUSTOMER_ID, C.CUSTOMER_NAME, C.CUSTOMER_TYPE, C.RISK_RATING
+        """)
+
+        cur.execute("""
+        CREATE VIEW IF NOT EXISTS CREDIT_RISK_SUMMARY AS
+        SELECT
+            L.LOAN_ID,
+            L.CUSTOMER_ID,
+            C.CUSTOMER_NAME,
+            L.PRODUCT_TYPE,
+            L.PRINCIPAL_AMOUNT,
+            L.OUTSTANDING_AMOUNT,
+            L.OUTSTANDING_AMOUNT / NULLIF(L.PRINCIPAL_AMOUNT, 0) AS UTILIZATION_RATIO,
+            COALESCE(MAX(R.DAYS_PAST_DUE), 0) AS MAX_DPD,
+            COUNT(CASE WHEN R.DAYS_PAST_DUE > 0 THEN 1 END) AS MISSED_PAYMENT_COUNT,
+            CASE
+                WHEN MAX(R.DAYS_PAST_DUE) > 90 THEN 'NPA'
+                WHEN MAX(R.DAYS_PAST_DUE) >= 61 THEN 'SMA_2'
+                WHEN MAX(R.DAYS_PAST_DUE) >= 31 THEN 'SMA_1'
+                WHEN MAX(R.DAYS_PAST_DUE) >= 1 THEN 'SMA_0'
+                ELSE 'STANDARD'
+            END AS CALCULATED_ASSET_CLASS
+        FROM LOAN L
+        JOIN CUSTOMER C ON L.CUSTOMER_ID = C.CUSTOMER_ID
+        LEFT JOIN LOAN_REPAYMENT R ON L.LOAN_ID = R.LOAN_ID
+        GROUP BY L.LOAN_ID, L.CUSTOMER_ID, C.CUSTOMER_NAME, L.PRODUCT_TYPE, L.PRINCIPAL_AMOUNT, L.OUTSTANDING_AMOUNT
+        """)
+
+        cur.execute("""
+        CREATE VIEW IF NOT EXISTS LIQUIDITY_STRESS_SCENARIOS AS
+        SELECT
+            POSITION_DATE,
+            BUSINESS_UNIT,
+            HQLA,
+            DEPOSIT_BALANCE,
+            NET_CASH_FLOW,
+            LCR AS CURRENT_LCR,
+            CASE
+                WHEN LCR < 100.0 THEN 'STATUTORY_BREACH'
+                WHEN LCR < 105.0 THEN 'SUPERVISORY_WARNING'
+                ELSE 'COMPLIANT'
+            END AS LCR_REGULATORY_STATUS
+        FROM LIQUIDITY_POSITION
+        """)
+
         conn.commit()
         self._seed_sample_data(conn)
         conn.close()
@@ -301,6 +359,36 @@ class SnowflakeEmulatorSession:
 
         conn.commit()
 
+    def get_connection(self):
+        """Returns a direct SQLite connection to the emulator database."""
+        return self._get_conn()
+
+    def execute(self, sql_stmt: str, params: tuple = ()):
+        """Executes a SQL statement directly against the emulator database and commits."""
+        conn = self._get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(sql_stmt, params)
+            conn.commit()
+            return cur.fetchall()
+        finally:
+            conn.close()
+
+    def reset_database(self):
+        """Resets the emulator database to fresh seed state."""
+        conn = self._get_conn()
+        cur = conn.cursor()
+        tables = [
+            "CUSTOMER", "ACCOUNT", "COUNTERPARTY", "TRANSACTIONS",
+            "LOAN", "LOAN_REPAYMENT", "LIQUIDITY_POSITION",
+            "REGULATORY_DOCUMENTS", "RISK_EVIDENCE", "RISK_CASE"
+        ]
+        for t in tables:
+            cur.execute(f"DELETE FROM {t}")
+        conn.commit()
+        self._seed_sample_data(conn)
+        conn.close()
+
     def sql(self, query: str):
         """Returns an execution object mimicking Snowpark's session.sql()"""
         return SnowparkQueryEmulator(self._get_conn(), query)
@@ -321,10 +409,27 @@ class SnowparkQueryEmulator:
 
     def to_pandas(self) -> pd.DataFrame:
         try:
-            df = pd.read_sql_query(self.query, self.conn)
+            q_strip = self.query.strip().upper()
+            if q_strip.startswith(("SELECT", "WITH", "PRAGMA", "EXPLAIN")):
+                df = pd.read_sql_query(self.query, self.conn)
+            else:
+                cur = self.conn.cursor()
+                cur.execute(self.query)
+                self.conn.commit()
+                df = pd.DataFrame()
         finally:
             self.conn.close()
         return df
+
+    def collect(self) -> list:
+        try:
+            cur = self.conn.cursor()
+            cur.execute(self.query)
+            self.conn.commit()
+            rows = cur.fetchall()
+            return rows
+        finally:
+            self.conn.close()
 
 
 def get_snowflake_session() -> Any:
